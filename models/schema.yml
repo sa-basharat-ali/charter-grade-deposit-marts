@@ -1,0 +1,34 @@
+# Grain is the contract. An AI analyst reading these marts should be able to tell, from this file
+# alone, which model answers "how much is uninsured?" and which ones only look like they do.
+models:
+  - name: stg_accounts
+    grain: account
+    columns:
+      - {name: holder_key, description: "who the sweep engine allocates for"}
+      - {name: insured_owner_key, description: "who the FDIC insures; a sole proprietorship is its owner (12 CFR 330.6)"}
+      - {name: ownership_category, description: "single or business; insurance is per owner, per category, per bank"}
+      - {name: relationship_key, description: "the founder behind one or more entities"}
+      - {name: investor_key, description: "the lead investor; the grain for concentration and run risk"}
+  - name: dim_account_scd2
+    grain: account x partner bank tenure
+    description: "type 2. Use for anything 'as of' a past date."
+  - name: dim_account_current
+    grain: account
+    description: "type 1. Routing only. Joining history to it moves pre-migration deposits onto today's bank."
+  - name: fct_balance_quarter_end
+    grain: account x quarter end
+  - name: int_sweep_slots
+    grain: account holder x program bank x quarter end
+  - name: fct_bank_position
+    grain: insured owner x category x bank x quarter end x holder x placement
+  - name: mart_uninsured_estimate
+    grain: quarter end
+
+metrics:
+  - name: uninsured_deposits
+    model: fct_bank_position
+    expression: "sum(max(0, amount_per(insured_owner_key, ownership_category, bank_code) - 250000))"
+    do_not_use:
+      - "max(0, ledger_balance - 250000) per account: ignores the sweep and the owner"
+      - "per holder after the sweep: double-counts the $250K for a sole proprietor with a personal account"
+    known_gap: "deposits a customer holds directly at a program bank are invisible here; ask for them, or exclude that bank"

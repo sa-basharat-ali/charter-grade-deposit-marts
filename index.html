@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Charter-grade deposit marts</title>
+<meta name="description" content="One question, five answers: estimating uninsured deposits for a fintech becoming a bank, built as dbt-style marts with tests.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Sans+Condensed:wght@500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#f2f4f1; --sheet:#fbfcfa; --ink:#15212b; --mute:#5b6a70; --rule:#c9d3cf; --rule2:#e1e7e4;
+  --band:#e6ece8; --teal:#0e5d58; --teal-soft:#d5e7e3; --red:#b0261c; --red-soft:#f4dcd8; --amber:#8a5a00;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace; --sans:"IBM Plex Sans",system-ui,-apple-system,sans-serif;
+  --cond:"IBM Plex Sans Condensed","IBM Plex Sans",system-ui,sans-serif;
+}
+@media (prefers-color-scheme:dark){:root{
+  --paper:#0f1518; --sheet:#151d21; --ink:#e3e9e6; --mute:#93a3a6; --rule:#33424a; --rule2:#24313a;
+  --band:#1b262c; --teal:#5fc1b6; --teal-soft:#183a38; --red:#f08a7e; --red-soft:#3d1f1c; --amber:#e0b35c; color-scheme:dark}}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--paper);color:var(--ink);font:15.5px/1.6 var(--sans);padding:32px 16px 64px;font-variant-numeric:tabular-nums}
+.sheet{max-width:920px;margin:0 auto;background:var(--sheet);border:1px solid var(--rule);box-shadow:0 1px 0 var(--rule2),0 18px 40px -28px rgba(0,0,0,.25)}
+.strip{display:grid;grid-template-columns:repeat(3,1fr);border-bottom:2px solid var(--ink)}
+.strip div{padding:10px 18px;border-right:1px solid var(--rule)}
+.strip div:last-child{border-right:0}
+.lbl{font:600 10.5px/1.3 var(--cond);letter-spacing:.12em;text-transform:uppercase;color:var(--mute)}
+.val{font:500 14px/1.4 var(--sans)}
+header.form{display:grid;grid-template-columns:1fr auto;gap:18px;padding:26px 28px 22px;border-bottom:1px solid var(--rule)}
+.formno{font:600 12px var(--mono);color:var(--teal);letter-spacing:.06em}
+h1{font:700 clamp(28px,4.6vw,42px)/1.08 var(--sans);letter-spacing:-.02em;margin:8px 0 10px;text-wrap:balance}
+.sub{color:var(--mute);max-width:62ch;margin:0}
+.stamp{align-self:start;border:2px solid var(--teal);color:var(--teal);font:600 11px/1.35 var(--cond);letter-spacing:.12em;text-transform:uppercase;padding:8px 10px;transform:rotate(2.5deg);text-align:center}
+.stamp b{display:block;font:600 18px var(--mono);letter-spacing:0}
+section{padding:26px 28px;border-bottom:1px solid var(--rule)}
+section:last-of-type{border-bottom:0}
+.sechead{display:flex;gap:14px;align-items:baseline;margin-bottom:12px;flex-wrap:wrap}
+.secno{font:600 12px var(--mono);background:var(--ink);color:var(--sheet);padding:2px 7px}
+h2{font:700 21px/1.25 var(--sans);margin:0;letter-spacing:-.01em;text-wrap:balance}
+p{margin:0 0 12px;max-width:68ch}
+.note{font-size:13.5px;color:var(--mute)}
+.wrap{overflow-x:auto;margin:6px 0 14px}
+table{border-collapse:collapse;width:100%;min-width:520px;font-size:14px}
+th{font:600 10.5px var(--cond);letter-spacing:.1em;text-transform:uppercase;color:var(--mute);text-align:left;padding:7px 10px;border-bottom:1.5px solid var(--ink)}
+td{padding:9px 10px;border-bottom:1px solid var(--rule2);vertical-align:top}
+td.n,th.n{text-align:right;font-family:var(--mono);white-space:nowrap}
+td.line{font:500 12px var(--mono);color:var(--mute);width:3.2em}
+tr.right td{background:var(--teal-soft)}
+tr.right td:nth-child(2){font-weight:600}
+tr.wrong td.n{color:var(--red)}
+tr.truth td{border-bottom:1.5px solid var(--ink);font-weight:600}
+.ladder{display:grid;gap:8px;margin:4px 0 18px}
+.rung{display:grid;grid-template-columns:minmax(150px,240px) 1fr 64px;gap:12px;align-items:center;font-size:13.5px}
+.rung .bar{height:16px;background:var(--band);position:relative}
+.rung .bar i{position:absolute;inset:0 auto 0 0;background:var(--red)}
+.rung.ok .bar i{background:var(--teal)}
+.rung .pct{font:600 13px var(--mono);text-align:right}
+.callout{border-left:3px solid var(--teal);background:var(--band);padding:12px 16px;margin:14px 0 4px;max-width:70ch}
+.callout.red{border-color:var(--red)}
+.got{background:var(--red-soft);border:1px dashed var(--red);padding:16px 18px;margin-top:6px}
+.got .lbl{color:var(--red)}
+code{font:13px var(--mono);background:var(--band);padding:1px 5px}
+pre{font:12.5px/1.55 var(--mono);background:var(--band);padding:14px 16px;overflow-x:auto;margin:8px 0 12px;border-left:3px solid var(--ink)}
+.files{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px 22px;font-size:13.5px}
+.files div{border-top:1px solid var(--rule2);padding-top:8px}
+.files code{background:none;padding:0;color:var(--teal);font-weight:500}
+footer{max-width:920px;margin:18px auto 0;display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;font-size:13px;color:var(--mute)}
+a{color:var(--teal)}
+@media (max-width:640px){
+  body{padding:16px 16px 48px}
+  .strip{grid-template-columns:1fr}.strip div{border-right:0;border-bottom:1px solid var(--rule)}
+  header.form{grid-template-columns:1fr;padding:20px 18px}.stamp{justify-self:start}
+  section{padding:22px 18px}
+  .rung{grid-template-columns:1fr 56px}.rung .bar{grid-column:1/-1;order:3}
+}
+</style>
+</head>
+<body>
+<div class="sheet">
+  <div class="strip">
+    <div><div class="lbl">Role</div><div class="val">Senior Analytics Engineer</div></div>
+    <div><div class="lbl">Company</div><div class="val">Mercury</div></div>
+    <div><div class="lbl">Candidate</div><div class="val">Syed Ahmed Basharat Ali</div></div>
+  </div>
+
+  <header class="form">
+    <div>
+      <div class="formno">SCHEDULE RC-O · MEMORANDUM ITEM 2 · WORKED IN DBT-STYLE SQL</div>
+      <h1>One question, five answers: uninsured deposits at a fintech becoming a bank</h1>
+      <p class="sub">A synthetic startup-banking fintech with partner banks, a $5M sweep and a mid-history migration off a legacy partner. 12,000 business depositors, 25,373 accounts, seven quarter ends. Staging and mart models with <code>ref()</code>, four tests, and a <code>schema.yml</code> that states every model's grain. Runs in about 3 seconds on the Python standard library.</p>
+    </div>
+    <div class="stamp">As of<b>2026-06-30</b>synthetic</div>
+  </header>
+
+  <section>
+    <div class="sechead"><span class="secno">01</span><h2>"How much of our deposits is uninsured?"</h2></div>
+    <p>Once a bank passes $1B in assets, its Call Report carries this number. Here it is on $6.78B of deposits, computed five ways from the same marts.</p>
+    <div class="ladder" aria-label="Uninsured share by grain">
+      <div class="rung"><span>Per account, ignoring the sweep</span><span class="bar"><i style="width:64.6%"></i></span><span class="pct">64.6%</span></div>
+      <div class="rung"><span>Per account holder, ignoring the sweep</span><span class="bar"><i style="width:72.9%"></i></span><span class="pct">72.9%</span></div>
+      <div class="rung"><span>Per holder, after the sweep</span><span class="bar"><i style="width:16.6%"></i></span><span class="pct">16.6%</span></div>
+      <div class="rung ok"><span>Per insured owner, after the sweep</span><span class="bar"><i style="width:16.6%"></i></span><span class="pct">16.6%</span></div>
+      <div class="rung ok"><span>True, with hidden direct deposits</span><span class="bar"><i style="width:17.1%"></i></span><span class="pct">17.1%</span></div>
+    </div>
+    <div class="wrap"><table>
+      <thead><tr><th>Line</th><th>Grain</th><th class="n">Uninsured</th><th class="n">Share</th></tr></thead>
+      <tbody>
+        <tr class="wrong"><td class="line">2.a</td><td>Per account, <code>max(0, balance − 250,000)</code> on the balance table</td><td class="n">$4.38B</td><td class="n">64.6%</td></tr>
+        <tr class="wrong"><td class="line">2.b</td><td>Per account holder, no sweep</td><td class="n">$4.94B</td><td class="n">72.9%</td></tr>
+        <tr class="wrong"><td class="line">2.c</td><td>Per account holder, after the sweep: what the sweep engine believes</td><td class="n">$1.12B</td><td class="n">16.6%</td></tr>
+        <tr class="right"><td class="line">2.d</td><td>Per insured owner × ownership category × bank, after the sweep (12 CFR 330)</td><td class="n">$1.13B</td><td class="n">16.6%</td></tr>
+        <tr class="truth"><td class="line">2.e</td><td>True, adding deposits customers hold directly at program banks</td><td class="n">$1.16B</td><td class="n">17.1%</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout red">An AI analyst pointed at the balance table writes line 2.a and answers 65%. The right query is 2.d, and even that misses <b>$33.9M</b> the platform can't see. The difference between 2.a and 2.d isn't SQL skill. It's whether the mart says what its grain is.</div>
+  </section>
+
+  <section>
+    <div class="sechead"><span class="secno">02</span><h2>The sweep allocates by account holder; the FDIC insures by owner</h2></div>
+    <p>A sole proprietorship is insured as its owner, together with the owner's personal accounts at the same bank. The sweep engine treats the business and the person as two holders. Each keeps its own $250K at the partner and fills the same program banks first.</p>
+    <div class="wrap"><table>
+      <thead><tr><th>Line</th><th>Item</th><th class="n">Amount</th></tr></thead>
+      <tbody>
+        <tr><td class="line">3.a</td><td>Sole proprietorships in the book</td><td class="n">1,372</td></tr>
+        <tr><td class="line">3.b</td><td>Founders over the limit at a bank the sweep says is covered</td><td class="n">43</td></tr>
+        <tr class="wrong"><td class="line">3.c</td><td>Coverage shown that doesn't exist</td><td class="n">$3.3M</td></tr>
+      </tbody>
+    </table></div>
+    <p class="note">Small in dollars, but each one is a customer told they're covered who isn't, which is the worst kind of error to find after a bank fails.</p>
+  </section>
+
+  <section>
+    <div class="sechead"><span class="secno">03</span><h2>A deposit the platform never sees</h2></div>
+    <p>136 customers also bank directly at one of the 19 program banks. 51 told us, and that bank is skipped. For 58 of the rest, the sweep put money into the same bank anyway.</p>
+    <div class="wrap"><table>
+      <thead><tr><th>Line</th><th>Item</th><th class="n">Amount</th></tr></thead>
+      <tbody>
+        <tr><td class="line">4.a</td><td>Customers with a direct account at a program bank</td><td class="n">136</td></tr>
+        <tr><td class="line">4.b</td><td>Of which disclosed (bank excluded from their sweep)</td><td class="n">51</td></tr>
+        <tr><td class="line">4.c</td><td>Undisclosed, and swept into that same bank</td><td class="n">58</td></tr>
+        <tr class="wrong"><td class="line">4.d</td><td>Shown as insured that isn't</td><td class="n">$30.6M</td></tr>
+      </tbody>
+    </table></div>
+    <p class="note">No model fixes this from data it doesn't have. The fix is asking customers. What the mart can do is say the gap exists, which is the <code>known_gap</code> line in <code>schema.yml</code>.</p>
+  </section>
+
+  <section>
+    <div class="sechead"><span class="secno">04</span><h2>A type 1 dimension rewrites the migration</h2></div>
+    <p>Deposits by partner bank, joined two ways. Type 2 joins each balance to the bank the account was at on that date. Type 1 joins to the bank it's at today.</p>
+    <div class="wrap"><table>
+      <thead><tr><th>Quarter end</th><th class="n">Type 2 · LEGACY</th><th class="n">PA</th><th class="n">PB</th><th class="n">Type 1 · LEGACY</th><th class="n">PA</th><th class="n">PB</th></tr></thead>
+      <tbody>
+        <tr><td>2024-12-31</td><td class="n">$5.69B</td><td class="n">$0</td><td class="n">$0</td><td class="n" style="color:var(--red)">$32.2M</td><td class="n" style="color:var(--red)">$2.89B</td><td class="n" style="color:var(--red)">$2.77B</td></tr>
+        <tr><td>2025-03-31</td><td class="n">$2.99B</td><td class="n">$1.56B</td><td class="n">$1.47B</td><td class="n" style="color:var(--red)">$10.9M</td><td class="n" style="color:var(--red)">$3.09B</td><td class="n" style="color:var(--red)">$2.93B</td></tr>
+        <tr><td>2025-06-30</td><td class="n">$0</td><td class="n">$3.23B</td><td class="n">$3.08B</td><td class="n">$0</td><td class="n">$3.23B</td><td class="n">$3.08B</td></tr>
+      </tbody>
+    </table></div>
+    <p>At 2024-12-31 the type 1 view puts <b>$5.66B</b> of pre-migration deposits on banks that didn't hold them yet. The only deposits left on LEGACY are accounts that closed before they moved. A charter adds a third bank to this history, so the dimension has to be type 2 before that day, not after.</p>
+<pre>-- dim_account_scd2.sql
+select account_id, bank_code,
+       effective_at as valid_from,
+       coalesce(lead(effective_at) over (partition by account_id order by effective_at),
+                '9999-12-31') as valid_to
+from {{ source('raw', 'bank_events') }}</pre>
+  </section>
+
+  <section>
+    <div class="sechead"><span class="secno">05</span><h2>The grain that's right for insurance is wrong for concentration</h2></div>
+    <div class="wrap"><table>
+      <thead><tr><th>Grain</th><th class="n">Top 10 hold</th><th class="n">Largest single key</th></tr></thead>
+      <tbody>
+        <tr><td>Insured owner</td><td class="n">6.5%</td><td class="n">1.2%</td></tr>
+        <tr><td>Founder</td><td class="n">6.5%</td><td class="n">1.2%</td></tr>
+        <tr class="right"><td>Lead investor's portfolio</td><td class="n">39.0%</td><td class="n">14.4%</td></tr>
+      </tbody>
+    </table></div>
+    <p>The size of the investor figure comes from my assumption about how concentrated lead investors are (a Zipf curve over 400 of them), so read it as a shape, not a forecast. The shape holds at any setting: no customer-level grain can show that one investor's portfolio may move its cash on the same day.</p>
+    <div class="got">
+      <div class="lbl">The part I got wrong</div>
+      <p style="margin:6px 0 0">I first built concentration on the founder, on the theory that one person behind several entities is "one customer." It moved the top-10 share from 6.5% to 6.5%. Founders rarely run more than one cash-heavy company at once. The grain that moves together is the investor, which is what the 2023 bank runs looked like, and it only showed up once I modeled it.</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="sechead"><span class="secno">06</span><h2>The contract an AI analyst reads</h2></div>
+    <p>Every model states its grain, and the metric names the one query to use and the ones that only look right.</p>
+<pre>metrics:
+  - name: uninsured_deposits
+    model: fct_bank_position
+    expression: "sum(max(0, amount_per(insured_owner_key, ownership_category, bank_code) - 250000))"
+    do_not_use:
+      - "max(0, ledger_balance - 250000) per account: ignores the sweep and the owner"
+      - "per holder after the sweep: double-counts the $250K for a sole proprietor with a personal account"
+    known_gap: "deposits a customer holds directly at a program bank are invisible here"</pre>
+    <div class="files">
+      <div><code>models/staging/stg_accounts.sql</code><br>one account, four keys: holder, insured owner, founder, investor</div>
+      <div><code>models/marts/int_sweep_slots.sql</code><br>the sweep in SQL, with opt-outs</div>
+      <div><code>models/marts/fct_bank_position.sql</code><br>owner × category × bank × quarter end</div>
+      <div><code>models/marts/mart_uninsured_estimate.sql</code><br>the same question at four grains</div>
+      <div><code>tests/</code><br>one bank per balance, the sweep conserves money, no slice over $250K, unique accounts</div>
+      <div><code>run.py</code><br>compiles refs, builds in dependency order, runs tests, prints findings</div>
+    </div>
+  </section>
+</div>
+<footer>
+  <span>Synthetic data, fixed seed. No real company, bank, customer or balance.</span>
+  <span>Syed Ahmed Basharat Ali · sabasharat.ali@gmail.com · <a href="https://basharat.net">basharat.net</a> · <a href="https://github.com/sa-basharat-ali/charter-grade-deposit-marts">source</a></span>
+</footer>
+</body>
+</html>
